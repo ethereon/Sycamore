@@ -17,44 +17,109 @@ This code is made available under the MIT License.
 
 
 import xmlrpclib
+import sys
+from optparse import OptionParser
 from SimpleXMLRPCServer import SimpleXMLRPCServer
 from BotController import BotController
+from SimController import SimController
+from threading import Timer
+
+class CommandDispatch:
+
+    
+
+    def __init__(self, botController, cutoff):
+
+        self.bot = botController
+        self.cutoff = cutoff
+        self.timer = None
+
+    def msg(self, msg):
+
+        print '[ Command Dispatch ] ', msg
+
+    def cutoffPassed(self):
+        self.msg("Cut off passed. Stopping robot...")
+        self.bot.brake()
+
+    def _dispatch(self, method, params):
+
+        try:
+            func = getattr(self.bot,method)
+        except AttributeError:
+            raise Exception('Method "%s" is not supported.' % method)
+
+        else:
+
+            #Reset the timer
+            if self.timer!=None : self.timer.cancel()
+
+            self.timer = Timer(self.cutoff, self.cutoffPassed)
+
+            self.timer.start()
+
+            # Note that there is a potential security issue here!
+            # There are no checks to limit the methods called.
+            return apply(func, params)
 
 
 
 class BotServer:
 
-    def __init__(self, devLocation):
-
-        self.bot = BotController()
-        self.bot.connect(devLocation)
-        self.bot.start()
-        self.bot.enterFullMode()
-
+    def __init__(self, commandDispatch):
         
+        self.commandDispatch = commandDispatch
 
-    def registerFunctions(self):
-
-        self.server.register_function(self.bot.driveStraight, 'driveStraight')
-        self.server.register_function(self.bot.rotate, 'rotate')
-        self.server.register_function(self.bot.drive, 'drive')
-        self.server.register_function(self.bot.brake, 'brake')
-        
 
     def start(self, listenAddress, listenPort):
 
         self.server = SimpleXMLRPCServer((listenAddress, listenPort), allow_none=True)
-        self.registerFunctions()
+        self.server.register_instance(self.commandDispatch)
         print "XML RPC BotServer started on port %d"%(listenPort)
         self.server.serve_forever()
         
 
 
 
-
 def main():
 
-    botServer = BotServer('/dev/ttyS0')
+    #Parse command line arguments
+
+    parser = OptionParser(usage='%prog [options] device_path (eg : /dev/ttyS0)',
+                          description = 'Sycamore RPC Server for iRobot Create')
+
+    parser.add_option('-s','--simulate', action='store_true', dest='simulate', help = 'Use simulated bot controller')
+    parser.add_option('-c','--cutoff', dest='cutoff', type='float', help = 'Cutoff time ( real number, seconds )')
+
+
+    (options, args) = parser.parse_args()
+
+    if len(args)!=1:
+        parser.error('Incorrect number of arguments')
+
+
+    #Configure the bot controller
+
+    if options.simulate:
+        botController = SimController()
+    else:
+        botController = BotController()
+
+
+    botController.connect(args[0])
+    botController.start()
+    botController.enterFullMode()
+
+    #Configure the server
+
+    if options.cutoff:
+        dispatch = CommandDispatch(botController, options.cutoff)
+    else:
+        dispatch = botController
+
+    #Start the server
+
+    botServer = BotServer(dispatch)
 
     botServer.start('localhost', 1337)
 
