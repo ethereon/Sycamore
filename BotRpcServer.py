@@ -15,7 +15,7 @@ This code is made available under the MIT License.
 
 '''
 
-
+import socket
 import xmlrpclib
 import sys
 from optparse import OptionParser
@@ -75,13 +75,15 @@ class BotServer:
 
         self.server = SimpleXMLRPCServer((listenAddress, listenPort), allow_none=True)
         self.server.register_instance(self.commandDispatch)
-        print "XML RPC BotServer started on port %d"%(listenPort)
+        print "XML RPC BotServer started on %s:%d"%(str(listenAddress), listenPort)
         self.server.serve_forever()
         
 
 
 
 def main():
+
+    DEFAULT_PORT = 1337
 
     #Parse command line arguments
 
@@ -90,6 +92,7 @@ def main():
 
     parser.add_option('-s','--simulate', action='store_true', dest='simulate', help = 'Use simulated bot controller')
     parser.add_option('-c','--cutoff', dest='cutoff', type='float', help = 'Cutoff time ( real number, seconds )')
+    parser.add_option('-p','--port', dest='port', type='int', help = 'Listening port ( default = %d )'%DEFAULT_PORT)
 
 
     (options, args) = parser.parse_args()
@@ -117,11 +120,15 @@ def main():
     else:
         dispatch = botController
 
+    servPort = options.port if options.port else DEFAULT_PORT
+
+    servAddress = socket.gethostbyname(socket.gethostname())
+
     #Start the server
 
     botServer = BotServer(dispatch)
 
-    botServer.start('localhost', 1337)
+    botServer.start(servAddress, servPort)
 
 
 if __name__ == "__main__":
